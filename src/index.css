@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --glass-bg: rgba(255, 255, 255, 0.65);
+    --glass-border: rgba(255, 255, 255, 0.85);
+    --glass-inner: rgba(255, 255, 255, 0.5);
+    --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+    --glass-inset: inset 1px 1px 2px 0 rgba(255, 255, 255, 0.9);
+    
+    --foreground: 240 10% 10%;
+    --muted-foreground: 240 5% 45%;
+    --primary-purple: #6531F7;
+    --system-success: #34C759;
+    --system-danger: #FF3B30;
+  }
+
+  .dark {
+    --glass-bg: rgba(18, 20, 32, 0.65);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-inner: rgba(255, 255, 255, 0.05);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+    --glass-inset: inset 1px 1px 1px 0 rgba(255, 255, 255, 0.1);
+
+    --foreground: 0 0% 98%;
+    --muted-foreground: 240 5% 65%;
+  }
+}
+
+/* Glassmorphism custom utility classes */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-inset);
+  border-radius: 20px;
+}
+
+.glass-subpanel {
+  background: var(--glass-inner);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-inset);
+  border-radius: 16px;
+}
+
+.glass-pill {
+  background: var(--glass-inner);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 9999px;
+}
+
+/* Background animated gradient glow */
+.glass-canvas-light {
+  background-color: #f1f4fc;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(199, 219, 255, 0.7) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(228, 212, 255, 0.7) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(245, 230, 255, 0.5) 0px, transparent 60%),
+    radial-gradient(at 0% 100%, rgba(215, 235, 255, 0.6) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(255, 225, 245, 0.6) 0px, transparent 50%);
+  background-attachment: fixed;
+}
+
+.glass-canvas-dark {
+  background-color: #0b0f19;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(45, 27, 105, 0.45) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(20, 50, 95, 0.4) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(30, 20, 70, 0.3) 0px, transparent 60%),
+    radial-gradient(at 100% 100%, rgba(60, 20, 90, 0.35) 0px, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* Custom scrollbars for glass */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(101, 49, 247, 0.2);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(101, 49, 247, 0.4);
+}
+
+/* Print styling */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-receipt, #printable-receipt * {
+    visibility: visible;
+  }
+  #printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    margin: 0;
+    padding: 8px;
+    background: white !important;
+    color: black !important;
+  }
+}
