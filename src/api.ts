@@ -1,4 +1,4 @@
-import { Product, Category, Shift, Sale, SaleItem, AnalyticsSummary, StoreSettings } from './types';
+import { Product, Category, Shift, Sale, SaleItem, DebtPayment, AnalyticsSummary, PeriodAnalytics, StoreSettings } from './types';
 
 const API_BASE = '/api';
 
@@ -90,13 +90,27 @@ export const api = {
       product_name: string;
       barcode?: string | null;
       quantity: number;
+      unit?: string;
       unit_price: number;
       cost_price: number;
     }>;
-    payment_method: 'CASH' | 'CARD' | 'TRANSFER' | 'MIXED';
+    payment_method: 'CASH' | 'CARD' | 'TRANSFER' | 'DEBT';
     cash_received?: number;
     discount_amount?: number;
-  }): Promise<{ success: boolean; receipt_number: string; sale_id: number; final_amount: number; change_returned: number }> {
+    customer_name?: string;
+    customer_phone?: string;
+    is_debt?: boolean;
+    debt_amount?: number;
+    comment?: string;
+  }): Promise<{ 
+    success: boolean; 
+    receipt_number: string; 
+    sale_id: number; 
+    final_amount: number; 
+    change_returned: number;
+    is_debt: number;
+    debt_amount: number;
+  }> {
     const res = await fetch(`${API_BASE}/sales`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -104,21 +118,44 @@ export const api = {
     });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.error || 'Ошибка при проведении продажи');
+      throw new Error(err.error || 'Ошибка при проведении накладной');
     }
     return res.json();
   },
 
-  async getSales(limit = 50, date?: string): Promise<Sale[]> {
+  async getSales(limit = 100, date?: string, start_date?: string, end_date?: string): Promise<Sale[]> {
     const query = new URLSearchParams();
     query.set('limit', String(limit));
     if (date) query.set('date', date);
+    if (start_date && end_date) {
+      query.set('start_date', start_date);
+      query.set('end_date', end_date);
+    }
     const res = await fetch(`${API_BASE}/sales?${query.toString()}`);
     return res.json();
   },
 
-  async getSaleDetails(id: number): Promise<{ sale: Sale; items: SaleItem[] }> {
+  async getSaleDetails(id: number): Promise<{ sale: Sale; items: SaleItem[]; payments: DebtPayment[] }> {
     const res = await fetch(`${API_BASE}/sales/${id}`);
+    return res.json();
+  },
+
+  // Debts (Долги)
+  async getDebts(): Promise<{ debts: Sale[]; totals: { total_debt_issued: number; total_debt_collected: number; total_debt_remaining: number; debtors_count: number } }> {
+    const res = await fetch(`${API_BASE}/debts`);
+    return res.json();
+  },
+
+  async payDebt(sale_id: number, amount: number, payment_method = 'CASH', comment?: string): Promise<{ success: boolean; remaining: number }> {
+    const res = await fetch(`${API_BASE}/debts/${sale_id}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, payment_method, comment }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Ошибка при внесении оплаты');
+    }
     return res.json();
   },
 
@@ -154,6 +191,15 @@ export const api = {
   // Analytics
   async getAnalyticsSummary(): Promise<AnalyticsSummary> {
     const res = await fetch(`${API_BASE}/analytics/summary`);
+    return res.json();
+  },
+
+  async getPeriodAnalytics(start_date?: string, end_date?: string): Promise<PeriodAnalytics> {
+    const params = new URLSearchParams();
+    if (start_date) params.set('start_date', start_date);
+    if (end_date) params.set('end_date', end_date);
+    const res = await fetch(`${API_BASE}/analytics/period?${params.toString()}`);
+    if (!res.ok) throw new Error('Ошибка загрузки отчета за период');
     return res.json();
   },
 

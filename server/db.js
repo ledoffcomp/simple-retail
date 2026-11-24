@@ -14,7 +14,6 @@ if (!fs.existsSync(dataDir)) {
 const dbPath = path.join(dataDir, 'retail.db');
 export const db = new DatabaseSync(dbPath);
 
-// Enable foreign keys
 db.exec('PRAGMA foreign_keys = ON;');
 
 export function initDatabase() {
@@ -22,7 +21,7 @@ export function initDatabase() {
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
-      color TEXT DEFAULT '#3b82f6'
+      color TEXT DEFAULT '#6531f7'
     );
 
     CREATE TABLE IF NOT EXISTS products (
@@ -31,11 +30,11 @@ export function initDatabase() {
       sku TEXT,
       name TEXT NOT NULL,
       category_id INTEGER,
-      unit TEXT DEFAULT 'шт',
+      unit TEXT DEFAULT 'м.п.',
       cost_price REAL DEFAULT 0,
       retail_price REAL NOT NULL,
       stock REAL DEFAULT 0,
-      min_stock REAL DEFAULT 3,
+      min_stock REAL DEFAULT 5,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE SET NULL
@@ -43,7 +42,7 @@ export function initDatabase() {
 
     CREATE TABLE IF NOT EXISTS cash_shifts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      cashier_name TEXT DEFAULT 'Администратор',
+      cashier_name TEXT DEFAULT 'Менеджер',
       opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       closed_at DATETIME,
       starting_cash REAL DEFAULT 0,
@@ -59,16 +58,22 @@ export function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       receipt_number TEXT UNIQUE NOT NULL,
       shift_id INTEGER,
-      cashier_name TEXT DEFAULT 'Администратор',
+      cashier_name TEXT DEFAULT 'Менеджер',
+      customer_name TEXT,
+      customer_phone TEXT,
       total_amount REAL NOT NULL,
       discount_amount REAL DEFAULT 0,
       final_amount REAL NOT NULL,
-      payment_method TEXT NOT NULL,
+      payment_method TEXT NOT NULL, -- 'CASH', 'CARD', 'TRANSFER', 'DEBT'
       cash_received REAL DEFAULT 0,
       change_returned REAL DEFAULT 0,
+      is_debt INTEGER DEFAULT 0,
+      debt_amount REAL DEFAULT 0,
+      debt_paid REAL DEFAULT 0,
       total_cost REAL DEFAULT 0,
       profit REAL DEFAULT 0,
-      status TEXT DEFAULT 'COMPLETED',
+      status TEXT DEFAULT 'COMPLETED', -- 'COMPLETED', 'RETURNED'
+      comment TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(shift_id) REFERENCES cash_shifts(id)
     );
@@ -80,6 +85,7 @@ export function initDatabase() {
       product_name TEXT NOT NULL,
       barcode TEXT,
       quantity REAL NOT NULL,
+      unit TEXT DEFAULT 'м.п.',
       unit_price REAL NOT NULL,
       cost_price REAL DEFAULT 0,
       discount REAL DEFAULT 0,
@@ -88,10 +94,20 @@ export function initDatabase() {
       FOREIGN KEY(product_id) REFERENCES products(id)
     );
 
+    CREATE TABLE IF NOT EXISTS debt_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sale_id INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      payment_method TEXT DEFAULT 'CASH',
+      comment TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS supplies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       doc_number TEXT NOT NULL,
-      supplier TEXT DEFAULT 'Основной поставщик',
+      supplier TEXT DEFAULT 'Поставщик сырья',
       total_amount REAL NOT NULL,
       comment TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -125,68 +141,64 @@ export function initDatabase() {
     );
   `);
 
-  // Initialize default settings if empty
-  const countSettings = db.prepare('SELECT COUNT(*) as cnt FROM settings').get();
-  if (countSettings.cnt === 0) {
-    const defaultSettings = [
-      ['store_name', 'Магазин "У Дома"'],
-      ['store_address', 'г. Москва, ул. Примерная, д. 10'],
-      ['store_inn', '770123456789'],
-      ['receipt_header', 'Добро пожаловать!'],
-      ['receipt_footer', 'Спасибо за покупку! Ждем вас снова.'],
-      ['currency', '₽'],
-      ['default_cashier', 'Администратор']
-    ];
-    const insertSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
-    for (const [k, v] of defaultSettings) {
-      insertSetting.run(k, v);
-    }
+  // Ensure customer columns exist in sales if migrating
+  try {
+    db.exec(`
+      ALTER TABLE sales ADD COLUMN customer_name TEXT;
+      ALTER TABLE sales ADD COLUMN customer_phone TEXT;
+      ALTER TABLE sales ADD COLUMN is_debt INTEGER DEFAULT 0;
+      ALTER TABLE sales ADD COLUMN debt_amount REAL DEFAULT 0;
+      ALTER TABLE sales ADD COLUMN debt_paid REAL DEFAULT 0;
+      ALTER TABLE sales ADD COLUMN comment TEXT;
+    `);
+  } catch (e) {
+    // Columns already exist
   }
 
-  // Seed default categories and products if empty
-  const countProds = db.prepare('SELECT COUNT(*) as cnt FROM products').get();
-  if (countProds.cnt === 0) {
-    const categories = [
-      { name: 'Напитки', color: '#06b6d4' },
-      { name: 'Снеки и сладости', color: '#f59e0b' },
-      { name: 'Молочная продукция', color: '#3b82f6' },
-      { name: 'Бакалея', color: '#10b981' },
-      { name: 'Бытовая химия', color: '#8b5cf6' }
-    ];
+  // Clear all demo grocery products (coffee, cookies, milk, etc.)
+  db.exec(`
+    DELETE FROM sale_items;
+    DELETE FROM sales;
+    DELETE FROM supply_items;
+    DELETE FROM supplies;
+    DELETE FROM cash_operations;
+    DELETE FROM products;
+    DELETE FROM categories;
+  `);
 
-    const insertCat = db.prepare('INSERT INTO categories (name, color) VALUES (?, ?)');
-    const catMap = {};
-    for (const cat of categories) {
-      const res = insertCat.run(cat.name, cat.color);
-      catMap[cat.name] = Number(res.lastInsertRowid);
-    }
+  // VIP-Plast Categories
+  const categories = [
+    { name: 'Подоконники ПВХ', color: '#6531f7' },
+    { name: 'Отливы оконные (металл)', color: '#3b82f6' },
+    { name: 'Сэндвич-панели', color: '#10b981' },
+    { name: 'Комплектующие и заглушки', color: '#f59e0b' }
+  ];
 
-    const demoProducts = [
-      { barcode: '4607001234567', sku: 'NAP-001', name: 'Кофе зерновой Espresso 250г', cat: 'Напитки', unit: 'шт', cost: 280, price: 490, stock: 24, min: 5 },
-      { barcode: '4607001234574', sku: 'NAP-002', name: 'Вода минеральная без газа 0.5л', cat: 'Напитки', unit: 'шт', cost: 22, price: 55, stock: 48, min: 10 },
-      { barcode: '4607001234581', sku: 'NAP-003', name: 'Сок Яблочный 1л Rich', cat: 'Напитки', unit: 'шт', cost: 85, price: 159, stock: 18, min: 6 },
-      { barcode: '4607001234598', sku: 'SNK-001', name: 'Шоколад молочный Ritter Sport 100г', cat: 'Снеки и сладости', unit: 'шт', cost: 95, price: 175, stock: 32, min: 8 },
-      { barcode: '4607001234604', sku: 'SNK-002', name: 'Печенье овсяное с изюмом 300г', cat: 'Снеки и сладости', unit: 'шт', cost: 65, price: 119, stock: 15, min: 5 },
-      { barcode: '4607001234611', sku: 'MOL-001', name: 'Молоко пастеризованное 3.2% 930мл', cat: 'Молочная продукция', unit: 'шт', cost: 58, price: 89, stock: 20, min: 8 },
-      { barcode: '4607001234628', sku: 'MOL-002', name: 'Сыр Российский классический 200г', cat: 'Молочная продукция', unit: 'шт', cost: 130, price: 219, stock: 12, min: 4 },
-      { barcode: '4607001234635', sku: 'BAK-001', name: 'Чай черный листовой Greenfield 100г', cat: 'Бакалея', unit: 'шт', cost: 110, price: 195, stock: 22, min: 6 },
-      { barcode: '4607001234642', sku: 'BAK-002', name: 'Макароны Barilla Спагетти 450г', cat: 'Бакалея', unit: 'шт', cost: 68, price: 115, stock: 30, min: 10 },
-      { barcode: '4607001234659', sku: 'BYT-001', name: 'Средство для мытья посуды Fairy 450мл', cat: 'Бытовая химия', unit: 'шт', cost: 115, price: 189, stock: 14, min: 4 }
-    ];
+  const insertCat = db.prepare('INSERT OR IGNORE INTO categories (name, color) VALUES (?, ?)');
+  for (const cat of categories) {
+    insertCat.run(cat.name, cat.color);
+  }
 
-    const insertProd = db.prepare(`
-      INSERT INTO products (barcode, sku, name, category_id, unit, cost_price, retail_price, stock, min_stock)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+  // Set default VIP-Plast settings
+  const defaultSettings = [
+    ['store_name', 'VIP-Plast'],
+    ['store_subtitle', 'Подоконники, отливы и сэндвич панели'],
+    ['store_address', 'Производственно-складской комплекс'],
+    ['store_phone', '+7 (999) 000-00-00'],
+    ['store_inn', '770000000000'],
+    ['receipt_header', 'VIP-Plast — Производство и продажа подоконников, отливов и сэндвич-панелей'],
+    ['receipt_footer', 'Претензии по количеству и качеству принимаются в момент отгрузки со склада. Товар получен в полном объеме.'],
+    ['currency', '₽'],
+    ['default_cashier', 'Менеджер отдела продаж']
+  ];
+  const insertSetting = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+  for (const [k, v] of defaultSettings) {
+    insertSetting.run(k, v);
+  }
 
-    for (const p of demoProducts) {
-      insertProd.run(p.barcode, p.sku, p.name, catMap[p.cat], p.unit, p.cost, p.price, p.stock, p.min);
-    }
-
-    // Open first shift
-    db.exec(`
-      INSERT INTO cash_shifts (cashier_name, starting_cash, status)
-      VALUES ('Администратор', 3000.0, 'OPEN');
-    `);
+  // Check shift
+  const openShift = db.prepare("SELECT id FROM cash_shifts WHERE status = 'OPEN'").get();
+  if (!openShift) {
+    db.prepare("INSERT INTO cash_shifts (cashier_name, starting_cash, status) VALUES ('Менеджер', 0, 'OPEN')").run();
   }
 }

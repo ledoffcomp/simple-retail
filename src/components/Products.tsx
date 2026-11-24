@@ -60,11 +60,11 @@ export const Products: React.FC<ProductsProps> = ({
       barcode: '',
       sku: '',
       category_id: categories[0]?.id || null,
-      unit: 'шт',
+      unit: 'м.п.',
       cost_price: 0,
       retail_price: 0,
       stock: 0,
-      min_stock: 3
+      min_stock: 5
     });
     setIsModalOpen(true);
   };
@@ -78,7 +78,6 @@ export const Products: React.FC<ProductsProps> = ({
   // Generate random 13-digit EAN barcode
   const generateEAN13 = () => {
     let code = '460' + Math.floor(100000000 + Math.random() * 900000000).toString().slice(0, 9);
-    // Calculate EAN-13 checksum
     let sum = 0;
     for (let i = 0; i < 12; i++) {
       sum += parseInt(code[i]) * (i % 2 === 0 ? 1 : 3);
@@ -142,7 +141,7 @@ export const Products: React.FC<ProductsProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `products_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `products_vipplast_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
   };
 
@@ -163,7 +162,7 @@ export const Products: React.FC<ProductsProps> = ({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по названию, штрихкоду или артикулу..."
+            placeholder="Поиск подоконников, отливов, сэндвичей по названию, артикулу или ШК..."
             className="w-full pl-10 pr-4 py-2 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </div>
@@ -175,15 +174,15 @@ export const Products: React.FC<ProductsProps> = ({
             className="px-3 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground flex items-center gap-1.5 transition-colors"
           >
             <Download className="w-3.5 h-3.5 text-muted-foreground" />
-            <span>Excel / CSV</span>
+            <span>Экспорт в Excel</span>
           </button>
 
           <button
             onClick={handleOpenAdd}
-            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#6531F7] to-[#7B46FF] text-white text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition-all"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Добавить товар</span>
+            <span>+ Добавить товар / размер</span>
           </button>
         </div>
       </div>
@@ -234,10 +233,10 @@ export const Products: React.FC<ProductsProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-muted-foreground uppercase text-[10px] tracking-wider font-semibold">
-                <th className="py-3 px-4">Товар</th>
+                <th className="py-3 px-4">Номенклатура / Размер</th>
                 <th className="py-3 px-3">Категория</th>
                 <th className="py-3 px-3 text-right">Закупка</th>
-                <th className="py-3 px-3 text-right">Розница</th>
+                <th className="py-3 px-3 text-right">Продажа</th>
                 <th className="py-3 px-3 text-right">Наценка</th>
                 <th className="py-3 px-3 text-center">Остаток</th>
                 <th className="py-3 px-4 text-right">Действия</th>
@@ -247,7 +246,7 @@ export const Products: React.FC<ProductsProps> = ({
               {filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                    Товары не найдены. Нажмите «+ Добавить товар», чтобы создать первую позицию.
+                    Каталог пуст. Нажмите «+ Добавить товар / размер», чтобы внести подоконники, отливы или сэндвич панели с нуля.
                   </td>
                 </tr>
               ) : (
@@ -259,8 +258,8 @@ export const Products: React.FC<ProductsProps> = ({
                       <td className="py-3 px-4">
                         <div className="font-semibold text-foreground text-sm">{p.name}</div>
                         <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono mt-0.5">
-                          {p.barcode && <span>ШК: {p.barcode}</span>}
                           {p.sku && <span>Арт: {p.sku}</span>}
+                          {p.barcode && <span>ШК: {p.barcode}</span>}
                         </div>
                       </td>
 
@@ -304,21 +303,21 @@ export const Products: React.FC<ProductsProps> = ({
                         <div className="flex items-center justify-end gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => setPriceTagProduct(p)}
-                            title="Печать ценника"
+                            title="Печать ценника / этикетки"
                             className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                           >
                             <Printer className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleOpenEdit(p)}
-                            title="Редактировать товар"
+                            title="Редактировать позицию"
                             className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleDelete(p)}
-                            title="Удалить товар"
+                            title="Удалить"
                             className="p-1.5 rounded-lg border border-border hover:bg-rose-500/10 hover:border-rose-500/30 text-muted-foreground hover:text-rose-500 transition-colors"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -343,7 +342,7 @@ export const Products: React.FC<ProductsProps> = ({
             <form onSubmit={handleSave}>
               <div className="p-5 border-b border-border flex items-center justify-between bg-muted/20">
                 <h3 className="text-base font-bold text-foreground">
-                  {editingProduct.id ? 'Редактирование товара' : 'Новый товар'}
+                  {editingProduct.id ? 'Редактирование номенклатуры' : 'Новая позиция в каталог VIP-Plast'}
                 </h3>
                 <button
                   type="button"
@@ -357,13 +356,13 @@ export const Products: React.FC<ProductsProps> = ({
               <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
                 {/* Name */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">Наименование товара *</label>
+                  <label className="text-xs font-semibold text-muted-foreground">Наименование и размер *</label>
                   <input
                     type="text"
                     required
                     value={editingProduct.name || ''}
                     onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
-                    placeholder="Например: Кофе зерновой Espresso 250г"
+                    placeholder="Например: Подоконник ПВХ Белый 300мм (м.п.)"
                     className="w-full px-3 py-2 rounded-xl bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
@@ -387,13 +386,15 @@ export const Products: React.FC<ProductsProps> = ({
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-muted-foreground">Единица измерения</label>
                     <select
-                      value={editingProduct.unit || 'шт'}
+                      value={editingProduct.unit || 'м.п.'}
                       onChange={(e) => setEditingProduct({ ...editingProduct, unit: e.target.value })}
                       className="w-full px-3 py-2 rounded-xl bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                     >
+                      <option value="м.п.">Погонный метр (м.п.)</option>
                       <option value="шт">Штука (шт)</option>
-                      <option value="кг">Килограмм (кг)</option>
-                      <option value="л">Литр (л)</option>
+                      <option value="м²">Квадратный метр (м²)</option>
+                      <option value="лист">Лист (лист)</option>
+                      <option value="компл">Комплект (компл)</option>
                       <option value="уп">Упаковка (уп)</option>
                     </select>
                   </div>
@@ -427,7 +428,7 @@ export const Products: React.FC<ProductsProps> = ({
                       type="text"
                       value={editingProduct.sku || ''}
                       onChange={(e) => setEditingProduct({ ...editingProduct, sku: e.target.value })}
-                      placeholder="NAP-001"
+                      placeholder="POD-300-W"
                       className="w-full font-mono px-3 py-2 rounded-xl bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
@@ -436,7 +437,7 @@ export const Products: React.FC<ProductsProps> = ({
                 {/* Prices & Stock */}
                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/80">
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-muted-foreground">Цена закупки (₽)</label>
+                    <label className="text-xs font-semibold text-muted-foreground">Цена закупки / себестоимость (₽)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -448,7 +449,7 @@ export const Products: React.FC<ProductsProps> = ({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-foreground">Цена продажи (₽) *</label>
+                    <label className="text-xs font-semibold text-muted-foreground">Цена продажи клиенту (₽) *</label>
                     <input
                       type="number"
                       step="0.01"
@@ -456,60 +457,68 @@ export const Products: React.FC<ProductsProps> = ({
                       value={editingProduct.retail_price || ''}
                       onChange={(e) => setEditingProduct({ ...editingProduct, retail_price: Number(e.target.value) })}
                       placeholder="0"
-                      className="w-full font-mono font-bold px-3 py-2 rounded-xl bg-card border border-emerald-500/50 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                      className="w-full font-mono font-bold text-base px-3 py-2 rounded-xl bg-card border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                     />
                   </div>
                 </div>
 
-                {/* Real-time Profit Preview */}
+                {/* Margin preview calculation banner */}
                 <div className="p-3 rounded-xl bg-muted/40 border border-border/80 flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Расчет доходности:</span>
-                  <div className="flex items-center gap-4">
-                    <span>Маржа: <strong className="text-foreground font-mono">+{marginRub} ₽</strong></span>
-                    <span>Наценка: <strong className="text-emerald-500 font-mono">+{markupPct}%</strong></span>
+                  <div>
+                    <span className="text-muted-foreground">Прибыль с единицы: </span>
+                    <strong className="font-mono text-foreground font-bold">{marginRub} ₽</strong>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Наценка: </span>
+                    <strong className={`font-mono font-bold ${markupPct >= 30 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                      +{markupPct}%
+                    </strong>
                   </div>
                 </div>
 
-                {/* Stock Controls */}
+                {/* Stock Counts */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-muted-foreground">Текущий остаток</label>
+                    <label className="text-xs font-semibold text-muted-foreground">Текущий остаток на складе</label>
                     <input
                       type="number"
-                      step="0.001"
+                      step="0.01"
                       value={editingProduct.stock || ''}
                       onChange={(e) => setEditingProduct({ ...editingProduct, stock: Number(e.target.value) })}
+                      placeholder="0"
                       className="w-full font-mono px-3 py-2 rounded-xl bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-muted-foreground">Минимальный остаток</label>
+                    <label className="text-xs font-semibold text-muted-foreground">Минимальный остаток (оповещение)</label>
                     <input
                       type="number"
-                      step="1"
+                      step="0.01"
                       value={editingProduct.min_stock || ''}
                       onChange={(e) => setEditingProduct({ ...editingProduct, min_stock: Number(e.target.value) })}
+                      placeholder="5"
                       className="w-full font-mono px-3 py-2 rounded-xl bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="p-4 border-t border-border bg-muted/20 flex items-center justify-end gap-3">
+              {/* Modal Actions */}
+              <div className="p-4 border-t border-border bg-muted/30 flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-border text-xs font-semibold hover:bg-muted"
+                  className="px-4 py-2 rounded-xl border border-border text-xs font-semibold hover:bg-muted transition-colors"
                 >
                   Отмена
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold transition-all shadow-sm"
+                  className="px-6 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold shadow-md transition-all"
                 >
-                  {isSubmitting ? 'Сохранение...' : 'Сохранить товар'}
+                  {isSubmitting ? 'Сохранение...' : 'Сохранить позицию'}
                 </button>
               </div>
             </form>
@@ -518,54 +527,58 @@ export const Products: React.FC<ProductsProps> = ({
       )}
 
       {/* ============================================================ */}
-      {/* MODAL: PRINT PRICE TAG                                       */}
+      {/* MODAL: PRICE TAG PRINT                                       */}
       {/* ============================================================ */}
       {priceTagProduct && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="max-w-sm w-full bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-border flex items-center justify-between bg-muted/20">
-              <h3 className="text-sm font-bold text-foreground">Печать ценника</h3>
-              <button onClick={() => setPriceTagProduct(null)} className="p-1 rounded-lg hover:bg-muted">
-                <X className="w-5 h-5" />
+          <div className="max-w-xs w-full bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-border flex items-center justify-between">
+              <h4 className="text-xs font-bold text-foreground">Печать ценника</h4>
+              <button 
+                onClick={() => setPriceTagProduct(null)}
+                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-6 flex justify-center bg-muted/40">
-              {/* Realistic Price Tag */}
+            <div className="p-6 flex justify-center bg-muted/20">
               <div 
                 id="printable-receipt"
-                className="w-64 bg-white text-black p-4 rounded-lg border-2 border-black font-sans text-center space-y-2 shadow-md"
+                className="w-60 bg-white text-black p-4 rounded border-2 border-black font-sans text-center space-y-2 shadow-sm"
               >
-                <div className="text-[10px] uppercase font-bold tracking-wider text-zinc-600">ЦЕННИК</div>
-                <div className="font-bold text-sm leading-tight text-black line-clamp-2">{priceTagProduct.name}</div>
-                <div className="py-2 border-y-2 border-black">
-                  <div className="text-3xl font-black font-mono tracking-tight">{priceTagProduct.retail_price} ₽</div>
-                  <div className="text-[10px] text-zinc-600">за 1 {priceTagProduct.unit}</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">VIP-Plast</div>
+                <div className="text-xs font-bold leading-tight line-clamp-2">{priceTagProduct.name}</div>
+                <div className="py-2 border-y-2 border-black my-1">
+                  <div className="text-3xl font-black font-mono tracking-tight leading-none">
+                    {priceTagProduct.retail_price} <span className="text-sm font-bold">₽</span>
+                  </div>
+                  <div className="text-[9px] text-zinc-600 mt-1">за 1 {priceTagProduct.unit}</div>
                 </div>
                 {priceTagProduct.barcode && (
-                  <div className="pt-1">
-                    <div className="font-mono text-xs tracking-widest">{priceTagProduct.barcode}</div>
+                  <div className="pt-1 font-mono text-[10px] tracking-wider text-zinc-600">
+                    *{priceTagProduct.barcode}*
                   </div>
                 )}
-                <div className="text-[9px] text-zinc-500 pt-1">
+                <div className="text-[8px] text-zinc-500">
                   Дата: {new Date().toLocaleDateString('ru-RU')}
                 </div>
               </div>
             </div>
 
-            <div className="p-4 border-t border-border flex items-center justify-end gap-3">
-              <button
-                onClick={() => setPriceTagProduct(null)}
-                className="px-4 py-2 rounded-xl border border-border text-xs font-semibold hover:bg-muted"
-              >
-                Закрыть
-              </button>
+            <div className="p-3 border-t border-border flex gap-2">
               <button
                 onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                className="flex-1 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Распечатать</span>
+                <span>Печать</span>
+              </button>
+              <button
+                onClick={() => setPriceTagProduct(null)}
+                className="px-3 py-2 rounded-xl border border-border text-xs font-semibold hover:bg-muted"
+              >
+                Закрыть
               </button>
             </div>
           </div>

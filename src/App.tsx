@@ -7,13 +7,14 @@ import { Products } from './components/Products';
 import { Supplies } from './components/Supplies';
 import { CashShifts } from './components/CashShifts';
 import { ReceiptsHistory } from './components/ReceiptsHistory';
+import { Debts } from './components/Debts';
 import { Settings } from './components/Settings';
 import { Product, Category, Shift, AnalyticsSummary, StoreSettings } from './types';
 import { api } from './api';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [isDark, setIsDark] = useState<boolean>(false); // Default to light glass like Figma preview
+  const [isDark, setIsDark] = useState<boolean>(false);
   const [openAddProductModal, setOpenAddProductModal] = useState<boolean>(false);
 
   // Data states
@@ -78,21 +79,23 @@ export const App: React.FC = () => {
   const getTabTitle = () => {
     switch (activeTab) {
       case 'dashboard':
-        return { title: 'Dashboard', subtitle: 'Обзор показателей и аналитика продаж' };
+        return { title: 'VIP-Plast: Аналитика и период', subtitle: 'Продажи за период, выручка, себестоимость и прибыль' };
       case 'pos':
-        return { title: 'Касса / РМК', subtitle: 'Быстрое обслуживание, сканирование и чеки' };
+        return { title: 'Касса и оформление накладных', subtitle: 'Оформление продажи, реализация в долг, печать А5' };
+      case 'debts':
+        return { title: 'Долги клиентов (Накладные в долг)', subtitle: 'Учет задолженностей покупателей, погашение и печать А5' };
       case 'products':
-        return { title: 'Товары и цены', subtitle: 'Каталог, цены, наценка и остатки' };
+        return { title: 'Каталог товаров и цены', subtitle: 'Подоконники, отливы, сэндвич-панели и комплектующие' };
       case 'supplies':
-        return { title: 'Склад и закупки', subtitle: 'Приходные накладные и инвентаризация' };
+        return { title: 'Склад и приходные накладные', subtitle: 'Поступление от поставщиков, остатки и инвентаризация' };
       case 'receipts':
-        return { title: 'Чеки и продажи', subtitle: 'Архив кассовых чеков и повторная печать' };
+        return { title: 'Журнал накладных и чеков', subtitle: 'История всех оформленных накладных и повторная печать' };
       case 'shifts':
         return { title: 'Касса и смены', subtitle: 'Денежный ящик, размен и Z-отчет' };
       case 'settings':
-        return { title: 'Настройки', subtitle: 'Параметры магазина и резервная копия' };
+        return { title: 'Реквизиты и настройки', subtitle: 'Данные организации VIP-Plast для печати в накладных' };
       default:
-        return { title: 'Простая Розница', subtitle: '' };
+        return { title: 'VIP-Plast', subtitle: 'Учет подоконников, отливов и сэндвич-панелей' };
     }
   };
 
@@ -148,6 +151,15 @@ export const App: React.FC = () => {
                 settings={settings}
                 onRefreshData={loadAllData}
                 onOpenShift={() => setActiveTab('shifts')}
+              />
+            </div>
+          )}
+
+          {activeTab === 'debts' && (
+            <div className="mr-3 glass-panel p-2">
+              <Debts
+                settings={settings}
+                onRefresh={loadAllData}
               />
             </div>
           )}

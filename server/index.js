@@ -8,7 +8,7 @@ import { db, initDatabase } from './db.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Initialize DB schema & seed data
+// Initialize DB schema & reset demo data
 initDatabase();
 
 const app = express();
@@ -66,7 +66,7 @@ app.get('/api/products', (req, res) => {
   }
 });
 
-// Lookup product by barcode (fast for barcode scanner)
+// Lookup product by barcode
 app.get('/api/products/barcode/:barcode', (req, res) => {
   try {
     const { barcode } = req.params;
@@ -103,11 +103,11 @@ app.post('/api/products', (req, res) => {
       sku || null,
       name,
       category_id || null,
-      unit || 'шт',
+      unit || 'м.п.',
       Number(cost_price || 0),
       Number(retail_price),
       Number(stock || 0),
-      Number(min_stock || 3)
+      Number(min_stock || 5)
     );
     res.json({ id: Number(result.lastInsertRowid), success: true });
   } catch (error) {
@@ -132,11 +132,11 @@ app.put('/api/products/:id', (req, res) => {
       sku || null,
       name,
       category_id || null,
-      unit || 'шт',
+      unit || 'м.п.',
       Number(cost_price || 0),
       Number(retail_price),
       Number(stock || 0),
-      Number(min_stock || 3),
+      Number(min_stock || 5),
       Number(id)
     );
     res.json({ success: true });
@@ -159,7 +159,7 @@ app.delete('/api/products/:id', (req, res) => {
 // Categories
 app.get('/api/categories', (req, res) => {
   try {
-    const cats = db.prepare('SELECT * FROM categories ORDER BY name ASC').all();
+    const cats = db.prepare('SELECT * FROM categories ORDER BY id ASC').all();
     res.json(cats);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -170,7 +170,7 @@ app.post('/api/categories', (req, res) => {
   try {
     const { name, color } = req.body;
     const stmt = db.prepare('INSERT INTO categories (name, color) VALUES (?, ?)');
-    const result = stmt.run(name, color || '#3b82f6');
+    const result = stmt.run(name, color || '#6531f7');
     res.json({ id: Number(result.lastInsertRowid), name, color });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -181,7 +181,6 @@ app.post('/api/categories', (req, res) => {
 // 2. CASH SHIFTS & OPERATIONS API
 // ==========================================
 
-// Get active shift
 app.get('/api/shifts/current', (req, res) => {
   try {
     const shift = db.prepare("SELECT * FROM cash_shifts WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get();
@@ -189,12 +188,12 @@ app.get('/api/shifts/current', (req, res) => {
       return res.json({ isOpen: false, shift: null });
     }
 
-    // Calculate real-time shift statistics
     const stats = db.prepare(`
       SELECT 
         COALESCE(SUM(CASE WHEN payment_method = 'CASH' THEN final_amount ELSE 0 END), 0) as cash_sales,
         COALESCE(SUM(CASE WHEN payment_method = 'CARD' THEN final_amount ELSE 0 END), 0) as card_sales,
         COALESCE(SUM(CASE WHEN payment_method = 'TRANSFER' THEN final_amount ELSE 0 END), 0) as transfer_sales,
+        COALESCE(SUM(CASE WHEN payment_method = 'DEBT' THEN final_amount ELSE 0 END), 0) as debt_sales,
         COALESCE(SUM(final_amount), 0) as total_sales,
         COALESCE(SUM(profit), 0) as total_profit,
         COUNT(id) as receipt_count
@@ -210,7 +209,6 @@ app.get('/api/shifts/current', (req, res) => {
       WHERE shift_id = ?
     `).get(shift.id);
 
-    // Current cash in drawer = starting_cash + cash_sales + cash_in - cash_out
     const expectedCashInDrawer = shift.starting_cash + stats.cash_sales + ops.cash_in - ops.cash_out;
 
     res.json({
@@ -227,7 +225,6 @@ app.get('/api/shifts/current', (req, res) => {
   }
 });
 
-// Open shift
 app.post('/api/shifts/open', (req, res) => {
   try {
     const { cashier_name, starting_cash } = req.body;
@@ -240,14 +237,13 @@ app.post('/api/shifts/open', (req, res) => {
       INSERT INTO cash_shifts (cashier_name, starting_cash, status)
       VALUES (?, ?, 'OPEN')
     `);
-    const result = stmt.run(cashier_name || 'Администратор', Number(starting_cash || 0));
+    const result = stmt.run(cashier_name || 'Менеджер', Number(starting_cash || 0));
     res.json({ id: Number(result.lastInsertRowid), success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Close shift (Z-report)
 app.post('/api/shifts/close', (req, res) => {
   try {
     const { closing_cash } = req.body;
@@ -284,7 +280,6 @@ app.post('/api/shifts/close', (req, res) => {
   }
 });
 
-// Add cash operation (Внесение / Изъятие / Расход)
 app.post('/api/shifts/operation', (req, res) => {
   try {
     const { type, amount, category, comment } = req.body;
@@ -305,28 +300,35 @@ app.post('/api/shifts/operation', (req, res) => {
 });
 
 // ==========================================
-// 3. SALES & POS API (РМК)
+// 3. SALES & INVOICES (НАКЛАДНЫЕ И ПРОДАЖИ)
 // ==========================================
 
-// Process sale
 app.post('/api/sales', (req, res) => {
   try {
-    const { items, payment_method, cash_received, discount_amount = 0 } = req.body;
+    const { 
+      items, 
+      payment_method, 
+      cash_received, 
+      discount_amount = 0, 
+      customer_name, 
+      customer_phone,
+      comment 
+    } = req.body;
+
     if (!items || items.length === 0) {
-      return res.status(400).json({ error: 'Корзина пуста' });
+      return res.status(400).json({ error: 'Список позиций пуст' });
     }
 
     // Get active shift
     let shift = db.prepare("SELECT id, cashier_name FROM cash_shifts WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get();
     if (!shift) {
-      // Auto-open shift if forgotten
-      const newShift = db.prepare("INSERT INTO cash_shifts (cashier_name, starting_cash, status) VALUES ('Администратор', 0, 'OPEN')").run();
-      shift = { id: Number(newShift.lastInsertRowid), cashier_name: 'Администратор' };
+      const newShift = db.prepare("INSERT INTO cash_shifts (cashier_name, starting_cash, status) VALUES ('Менеджер', 0, 'OPEN')").run();
+      shift = { id: Number(newShift.lastInsertRowid), cashier_name: 'Менеджер' };
     }
 
-    // Generate unique receipt number: ЧЕК-XXXX
+    // Unique invoice number: НАКЛ-XXXXX
     const countSales = db.prepare("SELECT COUNT(*) as cnt FROM sales").get();
-    const receipt_number = `ЧЕК-${String(countSales.cnt + 1).padStart(5, '0')}`;
+    const receipt_number = `НАКЛ-${String(countSales.cnt + 1).padStart(5, '0')}`;
 
     let total_amount = 0;
     let total_cost = 0;
@@ -338,37 +340,48 @@ app.post('/api/sales', (req, res) => {
 
     const final_amount = Math.max(0, total_amount - Number(discount_amount || 0));
     const profit = final_amount - total_cost;
+    
+    // Debt calculation
+    const is_debt = payment_method === 'DEBT' ? 1 : 0;
+    const debt_amount = is_debt ? final_amount : 0;
+    const debt_paid = 0;
     const change_returned = payment_method === 'CASH' ? Math.max(0, Number(cash_received || 0) - final_amount) : 0;
 
-    // Begin database transaction
     db.exec('BEGIN TRANSACTION');
     try {
       const saleStmt = db.prepare(`
         INSERT INTO sales (
-          receipt_number, shift_id, cashier_name, total_amount, discount_amount,
-          final_amount, payment_method, cash_received, change_returned, total_cost, profit
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          receipt_number, shift_id, cashier_name, customer_name, customer_phone,
+          total_amount, discount_amount, final_amount, payment_method, cash_received,
+          change_returned, is_debt, debt_amount, debt_paid, total_cost, profit, comment
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const saleResult = saleStmt.run(
         receipt_number,
         shift.id,
         shift.cashier_name,
+        customer_name || 'Розничный покупатель',
+        customer_phone || '',
         total_amount,
         Number(discount_amount || 0),
         final_amount,
         payment_method,
-        Number(cash_received || 0),
+        payment_method === 'CASH' ? Number(cash_received || 0) : (is_debt ? 0 : final_amount),
         change_returned,
+        is_debt,
+        debt_amount,
+        debt_paid,
         total_cost,
-        profit
+        profit,
+        comment || ''
       );
 
       const sale_id = Number(saleResult.lastInsertRowid);
 
       const itemStmt = db.prepare(`
-        INSERT INTO sale_items (sale_id, product_id, product_name, barcode, quantity, unit_price, cost_price, discount, total_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sale_items (sale_id, product_id, product_name, barcode, quantity, unit, unit_price, cost_price, discount, total_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const stockStmt = db.prepare(`
@@ -383,6 +396,7 @@ app.post('/api/sales', (req, res) => {
           item.product_name,
           item.barcode || '',
           Number(item.quantity),
+          item.unit || 'м.п.',
           Number(item.unit_price),
           Number(item.cost_price || 0),
           0,
@@ -398,7 +412,9 @@ app.post('/api/sales', (req, res) => {
         receipt_number,
         sale_id,
         final_amount,
-        change_returned
+        change_returned,
+        is_debt,
+        debt_amount
       });
     } catch (err) {
       db.exec('ROLLBACK');
@@ -409,16 +425,19 @@ app.post('/api/sales', (req, res) => {
   }
 });
 
-// Sales history
+// Sales list with filters
 app.get('/api/sales', (req, res) => {
   try {
-    const { limit = 50, date } = req.query;
+    const { limit = 100, date, start_date, end_date } = req.query;
     let sql = `SELECT * FROM sales WHERE 1=1`;
     const params = [];
 
     if (date) {
-      sql += ` AND date(created_at) = date(?)`;
+      sql += ` AND date(created_at, 'localtime') = date(?)`;
       params.push(date);
+    } else if (start_date && end_date) {
+      sql += ` AND date(created_at, 'localtime') BETWEEN date(?) AND date(?)`;
+      params.push(start_date, end_date);
     }
 
     sql += ` ORDER BY id DESC LIMIT ?`;
@@ -431,25 +450,103 @@ app.get('/api/sales', (req, res) => {
   }
 });
 
-// Single receipt details with items
+// Single invoice details
 app.get('/api/sales/:id', (req, res) => {
   try {
     const { id } = req.params;
     const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(Number(id));
-    if (!sale) return res.status(404).json({ error: 'Чек не найден' });
+    if (!sale) return res.status(404).json({ error: 'Накладная не найдена' });
 
     const items = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(Number(id));
-    res.json({ sale, items });
+    const payments = db.prepare('SELECT * FROM debt_payments WHERE sale_id = ? ORDER BY id ASC').all(Number(id));
+
+    res.json({ sale, items, payments });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // ==========================================
-// 4. INVENTORY & SUPPLIES API
+// 4. DEBT TRACKING API (ДОЛГОВЫЕ НАКЛАДНЫЕ)
 // ==========================================
 
-// Create supply (Приходная накладная)
+// Get all debts
+app.get('/api/debts', (req, res) => {
+  try {
+    const debts = db.prepare(`
+      SELECT s.*, 
+             ROUND(s.debt_amount - s.debt_paid, 2) as remaining_debt
+      FROM sales s
+      WHERE s.is_debt = 1 AND (s.debt_amount - s.debt_paid) > 0.01
+      ORDER BY s.id DESC
+    `).all();
+
+    const totals = db.prepare(`
+      SELECT 
+        COALESCE(SUM(debt_amount), 0) as total_debt_issued,
+        COALESCE(SUM(debt_paid), 0) as total_debt_collected,
+        COALESCE(SUM(debt_amount - debt_paid), 0) as total_debt_remaining,
+        COUNT(id) as debtors_count
+      FROM sales
+      WHERE is_debt = 1 AND (debt_amount - debt_paid) > 0.01
+    `).get();
+
+    res.json({ debts, totals });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Pay debt
+app.post('/api/debts/:sale_id/pay', (req, res) => {
+  try {
+    const { sale_id } = req.params;
+    const { amount, payment_method = 'CASH', comment } = req.body;
+
+    const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(Number(sale_id));
+    if (!sale) return res.status(404).json({ error: 'Накладная не найдена' });
+
+    const payAmount = Number(amount);
+    if (payAmount <= 0) return res.status(400).json({ error: 'Сумма оплаты должна быть больше нуля' });
+
+    db.exec('BEGIN TRANSACTION');
+    try {
+      // Record payment
+      db.prepare(`
+        INSERT INTO debt_payments (sale_id, amount, payment_method, comment)
+        VALUES (?, ?, ?, ?)
+      `).run(sale.id, payAmount, payment_method, comment || 'Погашение долга');
+
+      // Update sale debt_paid
+      const newPaid = Number(sale.debt_paid || 0) + payAmount;
+      db.prepare(`
+        UPDATE sales SET debt_paid = ? WHERE id = ?
+      `).run(newPaid, sale.id);
+
+      // Register cash operation if paid in cash
+      const openShift = db.prepare("SELECT id FROM cash_shifts WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get();
+      if (openShift && payment_method === 'CASH') {
+        db.prepare(`
+          INSERT INTO cash_operations (shift_id, type, amount, category, comment)
+          VALUES (?, 'IN', ?, 'Погашение долга', ?)
+        `).run(openShift.id, payAmount, `Погашение по ${sale.receipt_number} (${sale.customer_name})`);
+      }
+
+      db.exec('COMMIT');
+      res.json({ success: true, remaining: Math.max(0, sale.debt_amount - newPaid) });
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
+// 5. SUPPLIES & INVENTORY API (СКЛАД)
+// ==========================================
+
 app.post('/api/supplies', (req, res) => {
   try {
     const { supplier, doc_number, items, comment } = req.body;
@@ -470,7 +567,7 @@ app.post('/api/supplies', (req, res) => {
       `);
       const supplyResult = supplyStmt.run(
         doc_number || `ПН-${Date.now().toString().slice(-6)}`,
-        supplier || 'Основной поставщик',
+        supplier || 'Поставщик сырья',
         total_amount,
         comment || ''
       );
@@ -481,7 +578,6 @@ app.post('/api/supplies', (req, res) => {
         VALUES (?, ?, ?, ?, ?)
       `);
 
-      // Update product stock and update cost_price (and optionally retail_price)
       const updateProdStmt = db.prepare(`
         UPDATE products 
         SET stock = stock + ?, cost_price = ?, retail_price = COALESCE(?, retail_price)
@@ -510,7 +606,6 @@ app.post('/api/supplies', (req, res) => {
   }
 });
 
-// List supplies
 app.get('/api/supplies', (req, res) => {
   try {
     const supplies = db.prepare('SELECT * FROM supplies ORDER BY id DESC LIMIT 50').all();
@@ -520,7 +615,6 @@ app.get('/api/supplies', (req, res) => {
   }
 });
 
-// Quick inventory adjustment (Инвентаризация / Списание / Корректировка)
 app.post('/api/inventory/adjustment', (req, res) => {
   try {
     const { product_id, new_stock, reason } = req.body;
@@ -535,12 +629,11 @@ app.post('/api/inventory/adjustment', (req, res) => {
 });
 
 // ==========================================
-// 5. ANALYTICS & DASHBOARD KPI
+// 6. ANALYTICS & PERIOD REPORTS
 // ==========================================
 
 app.get('/api/analytics/summary', (req, res) => {
   try {
-    // Today's summary
     const today = db.prepare(`
       SELECT 
         COALESCE(SUM(final_amount), 0) as revenue,
@@ -548,17 +641,15 @@ app.get('/api/analytics/summary', (req, res) => {
         COUNT(id) as receipts,
         CASE WHEN COUNT(id) > 0 THEN ROUND(SUM(final_amount) / COUNT(id), 2) ELSE 0 END as avg_check
       FROM sales
-      WHERE date(created_at) = date('now', 'localtime') AND status = 'COMPLETED'
+      WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status = 'COMPLETED'
     `).get();
 
-    // Yesterday's revenue for trend
     const yesterday = db.prepare(`
       SELECT COALESCE(SUM(final_amount), 0) as revenue 
       FROM sales 
-      WHERE date(created_at) = date('now', '-1 day', 'localtime') AND status = 'COMPLETED'
+      WHERE date(created_at, 'localtime') = date('now', '-1 day', 'localtime') AND status = 'COMPLETED'
     `).get();
 
-    // Total products & low stock count
     const stockStats = db.prepare(`
       SELECT 
         COUNT(id) as total_products,
@@ -569,7 +660,14 @@ app.get('/api/analytics/summary', (req, res) => {
       WHERE is_active = 1
     `).get();
 
-    // Last 7 days revenue chart
+    const debtStats = db.prepare(`
+      SELECT 
+        COALESCE(SUM(debt_amount - debt_paid), 0) as total_unpaid_debt,
+        COUNT(id) as active_debtors
+      FROM sales
+      WHERE is_debt = 1 AND (debt_amount - debt_paid) > 0.01
+    `).get();
+
     const last7Days = db.prepare(`
       SELECT 
         strftime('%d.%m', created_at, 'localtime') as day_label,
@@ -583,10 +681,10 @@ app.get('/api/analytics/summary', (req, res) => {
       ORDER BY date(created_at, 'localtime') ASC
     `).all();
 
-    // Top 5 selling products today / all time
     const topProducts = db.prepare(`
       SELECT 
         p.name,
+        p.unit,
         COALESCE(SUM(si.quantity), 0) as units_sold,
         COALESCE(SUM(si.total_price), 0) as total_revenue
       FROM sale_items si
@@ -598,20 +696,35 @@ app.get('/api/analytics/summary', (req, res) => {
       LIMIT 5
     `).all();
 
-    // Recent 5 sales
+    const categoryBreakdown = db.prepare(`
+      SELECT 
+        COALESCE(c.name, 'Без категории') as category_name,
+        COALESCE(c.color, '#6531f7') as color,
+        COALESCE(SUM(si.total_price), 0) as total_revenue
+      FROM sale_items si
+      JOIN products p ON si.product_id = p.id
+      LEFT JOIN categories c ON p.category_id = c.id
+      JOIN sales s ON si.sale_id = s.id
+      WHERE s.status = 'COMPLETED'
+      GROUP BY c.id
+      ORDER BY total_revenue DESC
+    `).all();
+
     const recentSales = db.prepare(`
-      SELECT id, receipt_number, final_amount, payment_method, created_at
+      SELECT id, receipt_number, customer_name, final_amount, payment_method, is_debt, debt_amount, debt_paid, created_at
       FROM sales
       ORDER BY id DESC
-      LIMIT 5
+      LIMIT 8
     `).all();
 
     res.json({
       today,
       yesterday,
       stockStats,
+      debtStats,
       last7Days,
       topProducts,
+      categoryBreakdown,
       recentSales
     });
   } catch (error) {
@@ -619,8 +732,67 @@ app.get('/api/analytics/summary', (req, res) => {
   }
 });
 
+// Period Analytics (Произвольный период)
+app.get('/api/analytics/period', (req, res) => {
+  try {
+    let { start_date, end_date } = req.query;
+    const sDate = start_date || '2000-01-01';
+    const eDate = end_date || '2099-12-31';
+
+    const summary = db.prepare(`
+      SELECT 
+        COALESCE(SUM(final_amount), 0) as total_revenue,
+        COALESCE(SUM(profit), 0) as total_profit,
+        COALESCE(SUM(total_cost), 0) as total_cost,
+        COUNT(id) as total_orders,
+        COALESCE(SUM(CASE WHEN is_debt = 1 THEN (debt_amount - debt_paid) ELSE 0 END), 0) as period_unpaid_debt
+      FROM sales
+      WHERE date(created_at, 'localtime') BETWEEN date(?) AND date(?) AND status = 'COMPLETED'
+    `).get(sDate, eDate);
+
+    const itemsSold = db.prepare(`
+      SELECT 
+        p.name,
+        p.unit,
+        c.name as category_name,
+        COALESCE(SUM(si.quantity), 0) as total_quantity,
+        COALESCE(SUM(si.total_price), 0) as total_revenue
+      FROM sale_items si
+      JOIN products p ON si.product_id = p.id
+      LEFT JOIN categories c ON p.category_id = c.id
+      JOIN sales s ON si.sale_id = s.id
+      WHERE date(s.created_at, 'localtime') BETWEEN date(?) AND date(?) AND s.status = 'COMPLETED'
+      GROUP BY p.id
+      ORDER BY total_revenue DESC
+    `).all(sDate, eDate);
+
+    const dailyTrend = db.prepare(`
+      SELECT 
+        strftime('%d.%m', created_at, 'localtime') as day_label,
+        date(created_at, 'localtime') as date_str,
+        COALESCE(SUM(final_amount), 0) as revenue,
+        COALESCE(SUM(profit), 0) as profit,
+        COUNT(id) as orders
+      FROM sales
+      WHERE date(created_at, 'localtime') BETWEEN date(?) AND date(?) AND status = 'COMPLETED'
+      GROUP BY date(created_at, 'localtime')
+      ORDER BY date(created_at, 'localtime') ASC
+    `).all(sDate, eDate);
+
+    res.json({
+      start_date: sDate,
+      end_date: eDate,
+      summary,
+      itemsSold,
+      dailyTrend
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==========================================
-// 6. STORE SETTINGS API
+// 7. SETTINGS API
 // ==========================================
 
 app.get('/api/settings', (req, res) => {
@@ -649,7 +821,17 @@ app.post('/api/settings', (req, res) => {
   }
 });
 
-// Fallback for SPA routing in production
+// Clean demo reset endpoint if requested
+app.post('/api/admin/clean-reset', (req, res) => {
+  try {
+    initDatabase();
+    res.json({ success: true, message: 'База данных очищена и подготовлена под VIP-Plast' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Fallback for SPA routing
 app.get('*', (req, res) => {
   const indexPath = path.join(__dirname, '../dist/index.html');
   if (fs.existsSync(indexPath)) {
@@ -660,6 +842,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Retail Server running at http://localhost:${PORT}`);
-  console.log(`📱 Available on local network for smartphones and tablets!`);
+  console.log(`🚀 VIP-Plast Retail Server running at http://localhost:${PORT}`);
 });
